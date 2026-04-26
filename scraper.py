@@ -2,12 +2,17 @@ import re
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 from collections import Counter
+import atexit
 
 visited_urls = set()
 word_counts = Counter()
 subdomains = {}
 longest_page = ("", 0)
 
+STOP_WORDS = {
+    "the","a","and","of","to","in","is","for","on","with",
+    "that","by","this","it","from","as","at","be","are","was","were"
+}
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
@@ -31,13 +36,19 @@ def extract_next_links(url, resp):
     if resp.status != 200 or not resp.raw_response:
         return links
 
+    visited_urls.add(url)
+
     try:
         html = resp.raw_response.content
         soup = BeautifulSoup(html, "lxml")
 
+        visited_urls.add(url)
+
         # Text Processing
         text = soup.get_text()
-        words = re.findall(r"\b[a-zA-Z]+\b", text.lower())
+        words = re.findall(r"[a-zA-Z]{2,}", text.lower())
+
+        words = [w for w in words if w not in STOP_WORDS]
 
         # Update global word counts
         word_counts.update(words)
@@ -80,13 +91,16 @@ def is_valid(url):
         if parsed.scheme not in {"http", "https"}:
             return False
 
-        # Restrict to UCI domains
-        if not (
-            "ics.uci.edu" in parsed.netloc or
-            "cs.uci.edu" in parsed.netloc or
-            "informatics.uci.edu" in parsed.netloc or
-            "stat.uci.edu" in parsed.netloc
-        ):
+        # Stay in UCI domains
+        if not parsed.netloc.endswith(".uci.edu"):
+            return False
+
+        # Avoid query traps
+        if parsed.query:
+            return False
+
+        # Avoid swiki spam
+        if "swiki" in parsed.netloc:
             return False
 
         # Filter unwanted file types
@@ -102,12 +116,15 @@ def is_valid(url):
             parsed.path.lower()
         ):
             return False
-
+    
         # Trap detection, might need to change this!!!
         if len(url) > 200:
             return False
 
-        if url.count("=") > 5:
+        if url.count("/") > 10:
+            return False
+
+        if url.count("-") > 10:
             return False
 
         return True
@@ -115,3 +132,12 @@ def is_valid(url):
     except TypeError:
         print("TypeError for", url)
         raise
+
+def print_results():
+    print("\n=== RESULTS ===")
+    print("Unique pages:", len(visited_urls))
+    print("Longest page:", longest_page)
+    print("Top 50 words:", word_counts.most_common(50))
+    print("Subdomains:", subdomains)
+
+atexit.register(print_results)
