@@ -9,6 +9,10 @@ word_counts = Counter()
 subdomains = {}
 longest_page = ("", 0)
 
+# For extra credit (+2)
+seen_exact = set()
+seen_near = []
+
 STOP_WORDS = {
     "the","a","and","of","to","in","is","for","on","with",
     "that","by","this","it","from","as","at","be","are","was","were"
@@ -24,10 +28,7 @@ def extract_next_links(url, resp):
     # resp.url: the actual url of the page
     # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
     # resp.error: when status is not 200, you can check the error here, if needed.
-    # resp.raw_response: this is where the page actually is. More specifically, the raw_response has two parts:
-    #         resp.raw_response.url: the url, again
-    #         resp.raw_response.content: the content of the page!
-    # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
+    # resp.raw_response: this is where the page actually is.
     global visited_urls, word_counts, subdomains, longest_page
 
     links = []
@@ -36,11 +37,18 @@ def extract_next_links(url, resp):
     if resp.status != 200 or not resp.raw_response:
         return links
 
-    visited_urls.add(url)
-
     try:
         html = resp.raw_response.content
+
+        # Skip large pages
+        if len(html) > 2_000_000:
+            return links
+
         soup = BeautifulSoup(html, "lxml")
+
+        # Remove scripts/styles
+        for tag in soup(["script", "style"]):
+            tag.decompose()
 
         visited_urls.add(url)
 
@@ -49,6 +57,14 @@ def extract_next_links(url, resp):
         words = re.findall(r"[a-zA-Z]{2,}", text.lower())
 
         words = [w for w in words if w not in STOP_WORDS]
+
+        # Skip low info pages
+        if len(words) < 30:
+            return links
+
+        # Dupicate detection (extra credit)
+        if is_duplicate(words):
+            return links
 
         # Update global word counts
         word_counts.update(words)
@@ -80,23 +96,53 @@ def extract_next_links(url, resp):
     print("Scraping:", url)
     return links
 
+
+# NEW FUNCTION (extra credit)
+def is_duplicate(words):
+    word_set = set(words)
+
+    if not word_set:
+        return True
+
+    # exact duplicate
+    signature = " ".join(words)
+    if signature in seen_exact:
+        return True
+    seen_exact.add(signature)
+
+    # near duplicate (Jaccard)
+    for prev in seen_near[-300:]:
+        union = word_set | prev
+        if not union:
+            continue
+
+        similarity = len(word_set & prev) / len(union)
+        if similarity > 0.9:
+            return True
+
+    seen_near.append(word_set)
+    return False
+
+
 def is_valid(url):
     # Decide whether to crawl this url or not. 
-    # If you decide to crawl it, return True; otherwise return False.
-    # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
+        netloc = parsed.netloc.lower()
+        path = parsed.path.lower()
 
         # Only http/https
         if parsed.scheme not in {"http", "https"}:
             return False
 
-        # Stay in UCI domains
-        if not parsed.netloc.endswith(".uci.edu"):
-            return False
-
-        # Avoid query traps
-        if parsed.query:
+        # Strict domain filter
+        allowed = (
+            netloc.endswith(".ics.uci.edu") or
+            netloc.endswith(".cs.uci.edu") or
+            netloc.endswith(".informatics.uci.edu") or
+            netloc.endswith(".stat.uci.edu")
+        )
+        if not allowed:
             return False
 
         # Avoid swiki spam
@@ -116,8 +162,8 @@ def is_valid(url):
             parsed.path.lower()
         ):
             return False
-    
-        # Trap detection, might need to change this!!!
+
+        # Trap detection
         if len(url) > 200:
             return False
 
@@ -127,11 +173,16 @@ def is_valid(url):
         if url.count("-") > 10:
             return False
 
+        # Query trap control
+        if url.count("=") > 2:
+            return False
+
         return True
 
     except TypeError:
         print("TypeError for", url)
         raise
+
 
 def print_results():
     print("\n=== RESULTS ===")
