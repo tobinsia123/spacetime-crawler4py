@@ -30,11 +30,13 @@ def extract_next_links(url, resp):
     # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
     # resp.error: when status is not 200, you can check the error here, if needed.
     # resp.raw_response: this is where the page actually is.
+
+    # extract all valid outgoing links from webpage
     global visited_urls, word_counts, subdomains, longest_page
 
     links = []
 
-    # Skip bad responses
+    # Skip bad responses (if pages are empty or there are failed requests)
     if resp.status != 200 or not resp.raw_response:
         return links
 
@@ -45,18 +47,22 @@ def extract_next_links(url, resp):
         if len(html) > 2_000_000:
             return links
 
+        # parse through any html content
         soup = BeautifulSoup(html, "lxml")
 
         # Remove scripts/styles
         for tag in soup(["script", "style"]):
             tag.decompose()
 
+        # mark url as visited
         visited_urls.add(url)
 
         # Text Processing
+        # extract text + tokenize the words
         text = soup.get_text()
         words = re.findall(r"[a-zA-Z]{2,}", text.lower())
 
+        # get rid of common stop words
         words = [w for w in words if w not in STOP_WORDS]
 
         # Skip low info pages
@@ -78,6 +84,7 @@ def extract_next_links(url, resp):
         parsed = urlparse(url)
         subdomain = parsed.netloc
 
+        # track the amt of pages in the subdomain
         if subdomain not in subdomains:
             subdomains[subdomain] = 0
         subdomains[subdomain] += 1
@@ -86,7 +93,9 @@ def extract_next_links(url, resp):
         for tag in soup.find_all("a", href=True):
             href = tag["href"]
 
+        # converts relative url -> absolute url
             absolute = urljoin(url, href)
+        # remove fragment identifiers
             absolute, _ = urldefrag(absolute)
 
             links.append(absolute)
@@ -102,53 +111,65 @@ def extract_next_links(url, resp):
 def is_duplicate(words):
     word_set = set(words)
 
+    # empty pages would be duplicates
     if not word_set:
         return True
 
-    # exact duplicate
+    # exact duplicate using full txt signature to identify
     signature = " ".join(words)
     if signature in seen_exact:
         return True
     seen_exact.add(signature)
 
     # near duplicate (Jaccard)
+    # compare with recent pages
     for prev in seen_near[-300:]:
         union = word_set | prev
         if not union:
             continue
-
+        
+        # if similar, treat as duplicate
         similarity = len(word_set & prev) / len(union)
         if similarity > 0.9:
             return True
 
+    # store page to use for future comparisons
     seen_near.append(word_set)
+
+    # retains recent pages
     if len(seen_near) > 300:
         del seen_near[:-300]
     return False
 
-
+# trap detection
+# checks if 2 URLs are diff by 1 query parameter
 def is_same_except_one_query_param(url, other):
     parsed = urlparse(url)
     parsed_other = urlparse(other)
 
+    # not comparable if they have diff domains or paths
     if parsed.netloc.lower() != parsed_other.netloc.lower():
         return False
     if parsed.path != parsed_other.path:
         return False
 
+    # parses query parameters as dictionaries
     query_a = parse_qs(parsed.query, keep_blank_values=True)
     query_b = parse_qs(parsed_other.query, keep_blank_values=True)
 
+    # identical queries not needed
     if query_a == query_b:
         return False
 
     keys_a = set(query_a)
     keys_b = set(query_b)
 
+    # same amt of parameters but only 1 of them is different
     if len(keys_a) == len(keys_b):
         diff_keys = [k for k in keys_a if query_a.get(k) != query_b.get(k)]
         return len(diff_keys) == 1
 
+    # extra or missing parameter
     if abs(len(keys_a) - len(keys_b)) == 1:
         common_keys = keys_a & keys_b
         if all(query_a[k] == query_b[k] for k in common_keys):
@@ -168,7 +189,7 @@ def is_valid(url):
         if parsed.scheme not in {"http", "https"}:
             return False
 
-        # Strict domain filter
+        # Strict domain filter to certain UCI domains
         allowed = (
             netloc.endswith(".ics.uci.edu") or
             netloc.endswith(".cs.uci.edu") or
@@ -186,7 +207,7 @@ def is_valid(url):
         if path.startswith("/people") or path.startswith("/happening"):
             return False
 
-        # Filter unwanted file types
+        # Filter unwanted file types (not html)
         if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -211,21 +232,27 @@ def is_valid(url):
             return False
 
         # Query trap control
+        # if they have same page but with small differences
         if any(is_same_except_one_query_param(url, prev) for prev in recent_links):
             recent_links.append(url)
             return False
 
+        # tracks recent URLs to be used to compare
         recent_links.append(url)
+
+        # trap detection
+        # if there are too many query parameters
         if url.count("=") > 2:
             return False
 
         return True
 
+    # need to handle bad URLs that can't parse
     except TypeError:
         print("TypeError for", url)
         raise
 
-
+# Prints out the crawl stats when program exits
 def print_results():
     print("\n=== RESULTS ===")
     print("Unique pages:", len(visited_urls))
