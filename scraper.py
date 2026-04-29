@@ -185,11 +185,11 @@ def is_same_except_one_query_param(url, other):
             # If not, let it pass b/c it's valid unique page (for ex. text)
             return False
 
-    # extra or missing parameter
-    if abs(len(keys_a) - len(keys_b)) == 1:
-        common_keys = keys_a & keys_b
-        if all(query_a[k] == query_b[k] for k in common_keys):
-            return True
+    # # extra or missing parameter
+    # if abs(len(keys_a) - len(keys_b)) == 1:
+    #     common_keys = keys_a & keys_b
+    #     if all(query_a[k] == query_b[k] for k in common_keys):
+    #         return True
 
     return False
 
