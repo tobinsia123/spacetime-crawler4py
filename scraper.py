@@ -94,7 +94,7 @@ def extract_next_links(url, resp):
     except Exception as e:
         print("Error parsing:", url, e)
     
-    print("Scraping:", url)
+    #print("Scraping:", url)
     return links
 
 
