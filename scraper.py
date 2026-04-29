@@ -1,13 +1,14 @@
 import re
-from urllib.parse import urlparse, urljoin, urldefrag
+from collections import Counter, deque
+from urllib.parse import parse_qs, urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
-from collections import Counter
 import atexit
 
 visited_urls = set()
 word_counts = Counter()
 subdomains = {}
 longest_page = ("", 0)
+recent_links = deque(maxlen=30)
 
 # For extra credit (+2)
 seen_exact = set()
@@ -121,6 +122,38 @@ def is_duplicate(words):
             return True
 
     seen_near.append(word_set)
+    if len(seen_near) > 300:
+        del seen_near[:-300]
+    return False
+
+
+def is_same_except_one_query_param(url, other):
+    parsed = urlparse(url)
+    parsed_other = urlparse(other)
+
+    if parsed.netloc.lower() != parsed_other.netloc.lower():
+        return False
+    if parsed.path != parsed_other.path:
+        return False
+
+    query_a = parse_qs(parsed.query, keep_blank_values=True)
+    query_b = parse_qs(parsed_other.query, keep_blank_values=True)
+
+    if query_a == query_b:
+        return False
+
+    keys_a = set(query_a)
+    keys_b = set(query_b)
+
+    if len(keys_a) == len(keys_b):
+        diff_keys = [k for k in keys_a if query_a.get(k) != query_b.get(k)]
+        return len(diff_keys) == 1
+
+    if abs(len(keys_a) - len(keys_b)) == 1:
+        common_keys = keys_a & keys_b
+        if all(query_a[k] == query_b[k] for k in common_keys):
+            return True
+
     return False
 
 
@@ -149,6 +182,10 @@ def is_valid(url):
         if "swiki" in parsed.netloc:
             return False
 
+        # Disallow paths from robots.txt
+        if path.startswith("/people") or path.startswith("/happening"):
+            return False
+
         # Filter unwanted file types
         if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
@@ -158,7 +195,7 @@ def is_valid(url):
             r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             r"|epub|dll|cnf|tgz|sha1"
             r"|thmx|mso|arff|rtf|jar|csv"
-            r"|rm|smil|wmv|swf|wma|zip|rar|gz)$",
+            r"|rm|smil|wmv|swf|wma|zip|rar|gz|sql|cpp|c|jar|war)$",
             parsed.path.lower()
         ):
             return False
@@ -174,6 +211,11 @@ def is_valid(url):
             return False
 
         # Query trap control
+        if any(is_same_except_one_query_param(url, prev) for prev in recent_links):
+            recent_links.append(url)
+            return False
+
+        recent_links.append(url)
         if url.count("=") > 2:
             return False
 
