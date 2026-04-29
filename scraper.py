@@ -167,7 +167,23 @@ def is_same_except_one_query_param(url, other):
     # same amt of parameters but only 1 of them is different
     if len(keys_a) == len(keys_b):
         diff_keys = [k for k in keys_a if query_a.get(k) != query_b.get(k)]
-        return len(diff_keys) == 1
+
+        # trap detection
+        # if only one of the parameters are different
+        # check if it's just a number change/difference
+        if len(diff_keys) == 1:
+            k = diff_keys[0]
+
+            val_a = query_a.get(k, [""])[0]
+            val_b = query_b.get(k, [""])[0]
+
+            # if values are both numbers, treat as trap 
+            # # infinite loop
+            if val_a.isdigit() and val_b.isdigit():
+                return True
+
+            # If not, let it pass b/c it's valid unique page (for ex. text)
+            return False
 
     # extra or missing parameter
     if abs(len(keys_a) - len(keys_b)) == 1:
