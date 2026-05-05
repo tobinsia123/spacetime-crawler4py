@@ -148,6 +148,9 @@ def is_valid(url):
         # Avoid swiki spam
         if "swiki" in parsed.netloc:
             return False
+        
+        if path.startswith("/people") or path.startswith("/happening/"):
+            return False
 
         # Filter unwanted file types
         if re.match(
@@ -158,7 +161,7 @@ def is_valid(url):
             r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             r"|epub|dll|cnf|tgz|sha1"
             r"|thmx|mso|arff|rtf|jar|csv"
-            r"|rm|smil|wmv|swf|wma|zip|rar|gz)$",
+            r"|rm|smil|wmv|swf|wma|zip|rar|gz|sql|cpp|c|jar|war)$",
             parsed.path.lower()
         ):
             return False
@@ -170,12 +173,6 @@ def is_valid(url):
         if url.count("/") > 10:
             return False
 
-        if url.count("-") > 10:
-            return False
-
-        # Query trap control
-        if url.count("=") > 2:
-            return False
 
         return True
 
