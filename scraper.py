@@ -72,7 +72,7 @@ def extract_next_links(url, resp):
 
         # Text Processing
         text = soup.get_text()
-        words = re.findall(r"[a-zA-Z]{2,}", text.lower())
+        words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", text.lower())
 
         words = [w for w in words if w not in STOP_WORDS]
 
